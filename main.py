@@ -4,8 +4,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import uvicorn
+from config.config import ConfigManager
 from routes.upload_router import router as upload_router
-
+ConfigManager.load_config()
 app = FastAPI(title="GrainWatch API", version="1.0")
 
 # ======= 跨域配置 =======

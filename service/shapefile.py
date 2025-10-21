@@ -41,8 +41,7 @@ class ShapefileService:
         try: 
             logger.debug("开始处理ZIP文件")
             # 1. 解压
-            extract_dir = zip_path.with_suffix('')
-            extract_path = extract_zip(zip_path, extract_dir)
+            extract_path = extract_zip(zip_path, self.upload_dir)
 
             # 2. 验证 shapefile 组成
             shp_path = validate_shapefile_components(extract_path)
@@ -60,12 +59,13 @@ class ShapefileService:
 
             # 6. 转换为3857并存储本地
             gdf_3857 = CRSValidator.to_3857(gdf_4326)
-            output_path = self.upload_dir / f"{zip_path.stem}_3857.geojson"
+            output_path = extract_path / f"{zip_path.stem}_3857.geojson"
             gdf_3857.to_file(output_path, driver="GeoJSON")
 
             logger.info(f"ZIP文件处理完成, 结果保存至 {output_path}")
             # 7. 返回GeoJSON和文件路径
             return {
+                "label": shp_path.stem,
                 "geojson": geojson,
                 "local_path": str(output_path)
             }

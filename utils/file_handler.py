@@ -1,4 +1,5 @@
 import os
+import shutil
 from pathlib import Path
 import zipfile
 from utils.logger import get_logger
@@ -53,37 +54,55 @@ def get_unique_filename(directory: Path, original_filename: str) -> Path:
 
 
 def extract_zip(zip_path: Path, extract_to: Path) -> Path:
-    """解压ZIP文件到指定目录
+    """解压ZIP文件，处理中文编码和文件名冲突，并返回实际解压目录。
+
     Args:
         zip_path: ZIP文件路径
-        extract_to: 解压目标目录
+        extract_to: 解压操作的根目录
+
     Returns:
-    Path: 解压后的目录路径
+        Path: 本次解压操作创建的实际目录路径。
     """
-    extract_to.mkdir(parents=True, exist_ok=True)
+    # 1. 确定解压目录名（基于zip文件名），并处理重名
+    dir_name = zip_path.stem
+    # get_unique_filename 会找到一个不存在的路径，我们用它作为新目录
+    actual_extract_dir = get_unique_filename(extract_to, dir_name)
 
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        # 处理中文文件名编码问题
-        for info in zf.infolist():
-            # 使用UTF-8解码文件名
-            info.filename = info.filename.encode("cp437", errors="ignore").decode(
-                "gbk", errors="ignore"
-            )
+    # 2. 创建实际的解压目录
+    actual_extract_dir.mkdir(parents=True, exist_ok=True)
+    resolved_extract_dir = actual_extract_dir.resolve()
 
-            # 确保目标路径安全，防止路径遍历攻击
-            target_path = extract_to / info.filename
-            resolved_target = target_path.resolve()
-            resolved_extract = extract_to.resolve()
+    def decode_filename(raw_name: bytes) -> str:
+        """尝试用GBK和UTF-8解码文件名"""
+        try:
+            return raw_name.decode('gbk')
+        except UnicodeDecodeError:
+            return raw_name.decode('utf-8', errors='ignore')
 
-            if resolved_target.is_relative_to(resolved_extract):
-                zf.extract(info, resolved_extract)
+    with zipfile.ZipFile(zip_path, 'r') as zf:
+        for member in zf.infolist():
+            # 3. 处理中文文件名
+            # zipfile 默认使用 cp437, 我们需要先编码回 bytes 再用正确编码解码
+            file_name = decode_filename(member.filename.encode('cp437'))
 
-    # 查找解压后的实际目录
-    extracted_items = list(extract_to.iterdir())
-    if len(extracted_items) == 1 and extracted_items[0].is_dir():
-        result_path = extracted_items[0]
-    else:
-        result_path = extract_to
+            # 4. 确保路径安全，防止目录穿越
+            target_path = (resolved_extract_dir / file_name).resolve()
+            if not target_path.is_relative_to(resolved_extract_dir):
+                logger.warning(f"跳过不安全路径: {file_name}")
+                continue
 
-    logger.info(f"解压完成：{zip_path} -> {result_path}")
-    return result_path
+            # 5. 解压
+            if member.is_dir():
+                target_path.mkdir(parents=True, exist_ok=True)
+            else:
+                # 确保父目录存在
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                # 从zip中读取并写入新文件
+                with zf.open(member) as source, open(target_path, 'wb') as target:
+                    shutil.copyfileobj(source, target)
+
+    actual_extractor_path = actual_extract_dir / dir_name
+    logger.info(f"解压完成: '{zip_path}' -> '{actual_extractor_path}'")
+    # 6. 返回实际创建的解压目录
+    return actual_extractor_path
+

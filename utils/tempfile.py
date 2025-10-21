@@ -1,12 +1,15 @@
 import tempfile
 import os
 from datetime import datetime
+import atexit
 
 from config.config import ConfigManager
 
 
 # 全局变量，用于存储会话临时根目录
 _SESSION_TEMP_ROOT = None
+_TRACKED_TEMP_FILES = set()
+_TRACKED_TEMP_DIRS = set()
 
 
 def _get_session_temp_root():
@@ -22,24 +25,84 @@ def _get_session_temp_root():
 
 def mkd_temp(prefix="tmp", suffix="", dir=None):
     """
-    创建临时子文件夹,可以选择在指定目录下创建
+    创建临时子文件/子目录。如果未提供 `dir`，则创建一个可在程序退出时自动删除的临时文件并返回其路径。
 
-    :param prefix: 子文件夹名称前缀
-    :param suffix: 子文件夹名称后缀
-    :param dir: 若指定子目录，则在该子目录下创建（可选）
-    :return: 创建的临时目录路径
+    - 如果 `dir` 被指定：行为与之前类似，创建一个临时目录并返回路径（mkdtemp）。
+    - 如果 `dir` 为 None：在会话临时根目录下创建一个 NamedTemporaryFile(delete=False)，并注册在进程退出时删除该文件。
+
+    注意：在 Windows 上，打开的临时文件不能被其他进程删除，因此我们使用 delete=False 并在退出时删除。
+    """
+    if dir:
+        base_dir = dir
+        os.makedirs(base_dir, exist_ok=True)
+
+        # 在指定目录下创建命名临时文件（而不是临时目录），便于直接用 open 写入。
+        tmp = tempfile.NamedTemporaryFile(
+            prefix=prefix, suffix=suffix, dir=base_dir, delete=False
+        )
+        tmp_path = tmp.name
+        try:
+            tmp.close()
+        except Exception:
+            pass
+
+        _TRACKED_TEMP_FILES.add(tmp_path)
+        return tmp_path
+
+
+def mkd_tempdir(prefix="tmp", suffix="", dir=None):
+    """
+    创建一个临时子目录（受进程退出时自动删除的追踪）。
+
+    - 如果 `dir` 被指定：在该目录下创建一个唯一的临时子目录并返回路径。
+    - 如果 `dir` 为 None：在会话临时根目录下创建并返回目录路径。
     """
     base_dir = dir if dir else _get_session_temp_root()
     os.makedirs(base_dir, exist_ok=True)
-    return tempfile.mkdtemp(prefix=prefix, suffix=suffix, dir=base_dir)
+    tmp_dir = tempfile.mkdtemp(prefix=prefix, suffix=suffix, dir=base_dir)
+    _TRACKED_TEMP_DIRS.add(tmp_dir)
+    return tmp_dir
 
 
 def cleanup_all():
     """
     清理整个 SESSION_TEMP_ROOT 目录（慎用）
     """
+    # 删除追踪的单个临时文件
+    for p in list(_TRACKED_TEMP_FILES):
+        try:
+            if os.path.exists(p):
+                os.remove(p)
+        except Exception:
+            pass
+        finally:
+            _TRACKED_TEMP_FILES.discard(p)
+
+    # 删除追踪的临时目录
+    import shutil
+
+    for d in list(_TRACKED_TEMP_DIRS):
+        try:
+            if os.path.exists(d):
+                shutil.rmtree(d)
+        except Exception:
+            pass
+        finally:
+            _TRACKED_TEMP_DIRS.discard(d)
+
+    # 删除会话临时根目录下的其余内容（保守删除）
     session_root = _get_session_temp_root()
     if os.path.exists(session_root):
-        import shutil
+        try:
+            shutil.rmtree(session_root)
+        except Exception:
+            # 若删除失败（文件被占用），忽略
+            pass
 
-        shutil.rmtree(session_root)
+
+# 在进程退出时尝试清理追踪的临时文件
+def _atexit_cleanup():
+    cleanup_all()
+
+
+atexit.register(_atexit_cleanup)
