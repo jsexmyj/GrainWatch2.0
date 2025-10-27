@@ -2,17 +2,16 @@ import os
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from pathlib import Path
 import shutil
+from config.config import ConfigManager
 from service.shapefile import ShapefileService
 from utils.file_handler import get_unique_filename
-from dotenv import load_dotenv
 from utils.logger import get_logger
 from utils.tempfile import mkd_temp, mkd_tempdir
 
-load_dotenv()
 logger = get_logger("upload_router")
 router = APIRouter()
 
-upload_dir = os.getenv("UPLOAD_DIR", "data/uploads")
+upload_dir = ConfigManager.get("UPLOAD_DIR", "data/uploads")
 service = ShapefileService(Path(upload_dir))
 
 

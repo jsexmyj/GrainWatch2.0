@@ -1,1 +1,2 @@
 UPLOAD_DIR: data/uploads
+BUFFER_DIR: data/uploads/buffers
