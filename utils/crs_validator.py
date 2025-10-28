@@ -2,6 +2,7 @@ from shapely import Polygon
 from shapely.ops import transform
 import pyproj
 from utils.logger import get_logger
+import geopandas as gpd
 
 logger = get_logger("CRSValidator")
 
@@ -19,14 +20,16 @@ class CRSValidator:
             return False
 
     @staticmethod
-    def ensure_crs_4326(gdf):
-        if gdf.crs.to_epsg() != 4326:
-            gdf = gdf.to_crs(epsg=4326)
+    def ensure_projected_crs(
+        gdf: gpd.GeoDataFrame, target_crs: str
+    ) -> gpd.GeoDataFrame:
+        if not gdf.crs:
+            raise ValueError("输入数据未定义坐标系。")
+        if not target_crs:
+            raise ValueError("目标 CRS 未定义。")
+        if gdf.crs.to_string() != target_crs:
+            gdf = gdf.to_crs(target_crs)
         return gdf
-
-    @staticmethod
-    def to_3857(gdf):
-        return gdf.to_crs(epsg=3857)
 
     @staticmethod
     def get_epsg_code(crs_input) -> str:

@@ -51,23 +51,17 @@ class ShapefileService:
             gdf = gpd.read_file(shp_path)
 
             # 4. 判断坐标系并统一为4326
-            gdf_4326 = CRSValidator.ensure_crs_4326(gdf)
+            gdf_4326 = CRSValidator.ensure_projected_crs(gdf, "EPSG:4326")
 
             # 5. 转为GeoJSON返回前端
             geojson_str = gdf_4326.to_json()
             geojson = json.loads(geojson_str)
 
-            # 6. 转换为3857并存储本地
-            gdf_3857 = CRSValidator.to_3857(gdf_4326)
-            output_path = extract_path / f"{zip_path.stem}_3857.geojson"
-            gdf_3857.to_file(output_path, driver="GeoJSON")
-
-            logger.info(f"ZIP文件处理完成, 结果保存至 {output_path}")
-            # 7. 返回GeoJSON和文件路径
+            # 6. 返回GeoJSON和文件路径
             return {
                 "label": shp_path.stem,
                 "geojson": geojson,
-                "local_path": str(output_path)
+                "shp_path": str(shp_path)
             }
         except Exception as e:
             logger.error(f"处理ZIP文件时出错: {str(e)}")

@@ -3,9 +3,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import geopandas as gpd
+from shapely import make_valid
 from shapely.geometry import shape, mapping
-from langchain.tools import tool
-from dotenv import load_dotenv
 from utils.crs_validator import CRSValidator
 from utils.file_handler import get_unique_filename
 from utils.geojson_handler import load_geojson, save_geojson
@@ -13,37 +12,6 @@ from utils.logger import get_logger
 from config.config import ConfigManager
 
 logger = get_logger("buffer_tool")
-load_dotenv()
-
-# 默认配置常量
-DEFAULT_DISTANCE_UNIT = "meters"
-DEFAULT_INPUT_CRS = "EPSG:3857"
-DEFAULT_OUTPUT_CRS = "EPSG:3857"
-DEFAULT_METRIC_CRS = "EPSG:3857"
-
-
-def _features_from_geojson(gj: Dict) -> List[Dict]:
-    """从 GeoJSON 中提取 feature，支持 FeatureCollection, Feature, 以及单一 Geometry 对象"""
-    t = gj.get("type")
-    features: List[Dict] = []
-    if t == "FeatureCollection":
-        features = gj.get("features", [])
-    elif t == "Feature":
-        features = [gj]
-    elif t in (
-        "Point",
-        "LineString",
-        "Polygon",
-        "MultiPoint",
-        "MultiLineString",
-        "MultiPolygon",
-        "GeometryCollection",
-    ):
-        # raw geometry -> wrap into a Feature without properties
-        features = [{"type": "Feature", "geometry": gj, "properties": {}}]
-    else:
-        raise ValueError(f"Unsupported GeoJSON type: {t}")
-    return features
 
 
 def _normalize_unit_to_meters(distance: float, unit: str) -> float:
@@ -57,7 +25,7 @@ def _normalize_unit_to_meters(distance: float, unit: str) -> float:
     Returns:
         标准化后的米值，如果单位是度则返回NaN
     """
-    unit = (unit or DEFAULT_DISTANCE_UNIT).strip().lower()
+    unit = (unit or ConfigManager.get("buffer.distance_unit", "meters")).strip().lower()
     if unit in ("m", "meter", "meters"):
         return distance
     if unit in ("km", "kilometer", "kilometers"):
@@ -73,71 +41,44 @@ def _normalize_unit_to_meters(distance: float, unit: str) -> float:
     return distance
 
 
-@tool
-def buffer_geojson(
-    geojson_input: Union[str, Dict, Path],
+def buffer_core(
+    input_path: Path,
     distance: float,
-    unit: str = DEFAULT_DISTANCE_UNIT,
-    input_crs: str = DEFAULT_INPUT_CRS,
-    save_path: Optional[str] = None,
-) -> str:
-    """
-    对输入的 GeoJSON 做缓冲并以 GeoJSON 返回。
-
-    Args:
-        geojson_input: 输入的GeoJSON，可以是字符串、字典格式或者本地GeoJSON 文件路径
-        distance: 缓冲距离（数值）
-        unit: 单位, 支持 "meters" (默认), "km", "feet", "miles", "degrees"
-        input_crs: 输入 GeoJSON 的 CRS，默认 "EPSG:3857"（Web Mercator）
-        save_path: 缓冲区输出路径，默认为配置文件中的 BUFFER_DIR
-
-    Returns:
-        缓冲区输出文件路径
-
-    Raises:
-        ValueError: 当输入GeoJSON类型不支持时
-        Exception: 其他处理过程中可能发生的异常
-    """
+    unit: str = "meters",
+    target_crs: str = "EPSG:3857",
+    save_path: Path = None,
+) -> tuple[str, str]:
+    """对输入的 GeoDataFrame 进行缓冲区处理，返回结果的 GeoDataFrame。"""
     try:
-        gj = load_geojson(geojson_input)
-        features = _features_from_geojson(gj)
-        records = []
-        for feat in features:
-            geom = feat.get("geometry")
-            props = feat.get("properties", {}) or {}
-            if geom is None:
-                # skip empty geometry
-                continue
-            geom_shape = shape(geom)
-            records.append({**props, "geometry": geom_shape})
+        # 在函数执行时才读取配置，确保配置已经被加载
+        DEFAULT_DISTANCE_UNIT = unit or ConfigManager.get(
+            "buffer.distance_unit", "meters"
+        )
+        DEFAULT_OUTPUT_CRS = target_crs or ConfigManager.get(
+            "buffer.output_crs", "EPSG:3857"
+        )
+        DEFAULT_METRIC_CRS = ConfigManager.get("buffer.metric_crs", "EPSG:3857")
 
-        if not records:
-            # return empty FeatureCollection
-            result = json.dumps(
-                {"type": "FeatureCollection", "features": []}, ensure_ascii=False
-            )
-            logger.warning("输入GeoJSON为空，返回空的FeatureCollection")
-            return result
+        # Step 1. 读取数据
+        gdf = gpd.read_file(input_path)
+        gdf["geometry"] = gdf["geometry"].apply(make_valid)
 
-        gdf = gpd.GeoDataFrame(records, geometry="geometry")
-        # set input CRS if provided; default to EPSG:3857
-        try:
-            gdf = gdf.set_crs(input_crs, allow_override=True)
-        except Exception as e:
-            logger.warning(
-                f"设置输入CRS失败: {input_crs}, 使用默认值: {DEFAULT_INPUT_CRS}, 错误: {e}"
-            )
-            # fallback: try EPSG:3857
-            gdf = gdf.set_crs(DEFAULT_INPUT_CRS, allow_override=True)
+        # Step 2. 验证输入
+        if gdf.empty:
+            raise ValueError("输入数据为空。")
+        if not gdf.crs:
+            raise ValueError("输入数据缺少坐标系定义。")
+        gdf = CRSValidator.ensure_projected_crs(gdf, DEFAULT_OUTPUT_CRS)
+        logger.debug(f"已自动将数据重投影为 {DEFAULT_OUTPUT_CRS}。")
 
-        meters = _normalize_unit_to_meters(distance, unit)
-
+        # Step 3. 计算缓冲区
+        meters = _normalize_unit_to_meters(distance, DEFAULT_DISTANCE_UNIT)
         if meters != meters:  # NaN => unit was degrees
             # buffer in degrees directly (no reprojection)
             gdf["geometry"] = gdf.geometry.buffer(distance)
             out_gdf = gdf
         else:
-            # buffer in meters: reproject to a metric CRS (Web Mercator), buffer, then back
+            # 重投影到度量单位的CRS，进行缓冲后再投影回目标CRS
             try:
                 gdf_m = gdf.to_crs(DEFAULT_METRIC_CRS)
                 gdf_m["geometry"] = gdf_m.geometry.buffer(meters)
@@ -148,18 +89,26 @@ def buffer_geojson(
                 gdf["geometry"] = gdf.geometry.buffer(meters)
                 out_gdf = gdf
 
-        # 处理保存路径
-        if save_path is None:
-            save_dir = ConfigManager.get("BUFFER_DIR", "data/uploads/buffers")
-            save_path = get_unique_filename(
-                directory=Path(save_dir), original_filename="buffer_output.geojson"
-            )
+        logger.info(f"缓冲区处理完成，缓冲距离: {distance} {DEFAULT_DISTANCE_UNIT} 。")
 
-        buffer_path = save_geojson(out_gdf, output_path=str(save_path))
-        logger.info(
-            f"缓冲区输出成功！缓冲距离: {distance} {unit}, 输入CRS: {input_crs}, 输出CRS: {out_gdf.crs}"
-        )
-        return buffer_path
+        # Step 4. 保存结果
+        if save_path is None:
+            save_dir = ConfigManager.get("buffer.BUFFER_DIR", "data/uploads/buffer")
+            save_path = get_unique_filename(
+                directory=Path(save_dir),
+                original_filename=f"{input_path.stem}_buffer.shp",
+            )
+        else:
+            save_path = get_unique_filename(
+                directory=save_path.parent, original_filename=save_path.name
+            )
+        out_gdf.to_file(save_path)
+        logger.info(f"缓冲区结果已保存到: {save_path}")
+
+        # Step 5. 生成可视化的 GeoJSON
+        geojson = out_gdf.to_json()
+
+        return str(save_path), geojson
     except Exception as e:
         logger.error(f"缓冲区处理失败: {e}")
         raise

@@ -34,7 +34,7 @@ async def upload_zip(file: UploadFile = File(...)):
             "status": "success",
             "label": result["label"],
             "geojson": result["geojson"],
-            "local_path": result["local_path"],
+            "local_path": result["shp_path"],
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
