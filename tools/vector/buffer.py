@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Union
 import geopandas as gpd
 from shapely import make_valid
 from shapely.geometry import shape, mapping
+from utils.file_handler import ensure_folder_exists
 from utils.crs_validator import CRSValidator
 from utils.file_handler import get_unique_filename
 from utils.geojson_handler import load_geojson, save_geojson
@@ -96,11 +97,13 @@ def buffer_core(
         # Step 4. 保存结果
         if save_path is None:
             save_dir = ConfigManager.get("buffer.BUFFER_DIR", "data/uploads/buffer")
+            ensure_folder_exists(save_dir)
             save_path = get_unique_filename(
                 directory=Path(save_dir),
                 original_filename=f"{input_path.stem}_buffer.shp",
             )
         else:
+            ensure_folder_exists(save_path.parent)
             save_path = get_unique_filename(
                 directory=save_path.parent, original_filename=save_path.name
             )
