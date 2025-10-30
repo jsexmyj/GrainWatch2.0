@@ -75,15 +75,15 @@ def extract_zip(zip_path: Path, extract_to: Path) -> Path:
     def decode_filename(raw_name: bytes) -> str:
         """尝试用GBK和UTF-8解码文件名"""
         try:
-            return raw_name.decode('gbk')
+            return raw_name.decode("gbk")
         except UnicodeDecodeError:
-            return raw_name.decode('utf-8', errors='ignore')
+            return raw_name.decode("utf-8", errors="ignore")
 
-    with zipfile.ZipFile(zip_path, 'r') as zf:
+    with zipfile.ZipFile(zip_path, "r") as zf:
         for member in zf.infolist():
             # 3. 处理中文文件名
             # zipfile 默认使用 cp437, 我们需要先编码回 bytes 再用正确编码解码
-            file_name = decode_filename(member.filename.encode('cp437'))
+            file_name = decode_filename(member.filename.encode("cp437"))
 
             # 4. 确保路径安全，防止目录穿越
             target_path = (resolved_extract_dir / file_name).resolve()
@@ -98,11 +98,11 @@ def extract_zip(zip_path: Path, extract_to: Path) -> Path:
                 # 确保父目录存在
                 target_path.parent.mkdir(parents=True, exist_ok=True)
                 # 从zip中读取并写入新文件
-                with zf.open(member) as source, open(target_path, 'wb') as target:
+                with zf.open(member) as source, open(target_path, "wb") as target:
                     shutil.copyfileobj(source, target)
 
-    actual_extractor_path = actual_extract_dir / dir_name
+        actual_extractor_path = actual_extract_dir / dir_name
+
     logger.info(f"解压完成: '{zip_path}' -> '{actual_extractor_path}'")
     # 6. 返回实际创建的解压目录
     return actual_extractor_path
-

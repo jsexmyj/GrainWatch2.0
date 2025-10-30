@@ -5,8 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 from config.config import ConfigManager
-from routes.upload_router import router as upload_router
 ConfigManager.load_config()
+from routes.upload_router import router as upload_router
+
+
 app = FastAPI(title="GrainWatch API", version="1.0")
 
 # ======= 跨域配置 =======
@@ -31,4 +33,4 @@ app.include_router(upload_router, tags=["Upload"])
 
 # ======= 启动入口 =======
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, port=8000)

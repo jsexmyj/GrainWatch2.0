@@ -3,7 +3,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from pathlib import Path
 import shutil
 from config.config import ConfigManager
-from service.shapefile import ShapefileService
+from service.zip_to_shp import ShapefileService
 from utils.file_handler import get_unique_filename
 from utils.logger import get_logger
 from utils.tempfile import mkd_temp, mkd_tempdir

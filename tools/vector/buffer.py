@@ -48,7 +48,9 @@ def buffer_core(
     target_crs: str = "EPSG:3857",
     save_path: Path = None,
 ) -> tuple[str, str]:
-    """对输入的 GeoDataFrame 进行缓冲区处理，返回结果的 GeoDataFrame。"""
+    """
+    处理缓冲区操作的核心逻辑。
+    """
     try:
         # 在函数执行时才读取配置，确保配置已经被加载
         DEFAULT_DISTANCE_UNIT = unit or ConfigManager.get(

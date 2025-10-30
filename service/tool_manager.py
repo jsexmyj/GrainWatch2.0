@@ -17,7 +17,7 @@ class ToolManager:
 
     @staticmethod
     @tool
-    def buffer(
+    def buffer_tool(
         input_path: Path,
         save_path: Path = None,
         distance: float = 10,
@@ -48,5 +48,5 @@ class ToolManager:
 
     def get_tool_lists(self):
         """获取工具列表，供 LangChain Agent 使用"""
-        tools = [self.buffer]
+        tools = [self.buffer_tool]
         return tools
