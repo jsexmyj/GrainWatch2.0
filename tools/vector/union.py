@@ -1,6 +1,7 @@
 import geopandas as gpd
 from pathlib import Path
 from typing import List, Tuple, Optional
+from tools.vector.base import BaseVectorTool
 from utils.file_handler import ensure_folder_exists, get_unique_filename
 from utils.logger import get_logger
 from config.config import ConfigManager
@@ -16,20 +17,6 @@ def union_core(
         raise ValueError("至少需要两个输入文件进行合并。")
 
     try:
-        # 保存路径确认存在
-        if save_path is None:
-            save_dir = Path(ConfigManager.get("UNION_DIR", "data/uploads/unions"))
-            ensure_folder_exists(save_dir)
-            save_path = get_unique_filename(
-                directory=save_dir,
-                original_filename=f"{input_paths[0].stem}_{input_paths[1].stem}_union.shp",
-            )
-        else:
-            ensure_folder_exists(save_path.parent)  # 确保保存目录存在
-            save_path = get_unique_filename(
-                directory=save_path.parent, original_filename=save_path.name
-            )
-
         # 读取所有图层
         layers = []
         for i, path in enumerate(input_paths):
@@ -59,8 +46,32 @@ def union_core(
         logger.info(f"合并完成，结果保存到: {save_path}")
 
         geojson = result.to_json()
-        return save_path, geojson
+        return str(save_path), geojson
 
     except Exception as e:
         logger.error(f"合并操作失败: {str(e)}")
         raise
+
+
+# ===== 新增：UnionTool 类 =====
+class UnionTool(BaseVectorTool):
+    """Union工具类，封装路径管理和业务逻辑调用"""
+
+    def _execute_core(
+        self, input_paths: List[Path], save_path: Path, **kwargs
+    ) -> Tuple[str, str]:
+        """
+        调用 union_core 函数
+
+        Args:
+            input_paths: 输入路径列表（union只需要两个）
+            save_path: 已准备好的保存路径
+            **kwargs: keep_fid 等参数
+        """
+        # 从 kwargs 提取参数
+        keep_fid = kwargs.get("keep_fid", True)
+
+        # 调用核心函数，传入准备好的 save_path
+        return union_core(
+            input_paths=input_paths, keep_fid=keep_fid, save_path=save_path
+        )

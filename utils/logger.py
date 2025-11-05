@@ -5,9 +5,7 @@ import os
 global_log_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 
-def get_logger(
-    name=__name__, log_dir=r"data\LOG", log_filename=f"{global_log_time}.log"
-):
+def get_logger(name=__name__, log_dir=r"LOG", log_filename=f"{global_log_time}.log"):
     logger = logging.getLogger(name)
 
     if not logger.handlers:  # 防止重复添加 handler

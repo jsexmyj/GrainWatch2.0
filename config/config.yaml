@@ -1,11 +1,11 @@
 UPLOAD_DIR: data/uploads
-
+vector_dir: data/uploads/vectors
+static_dir: data/uploads/static
+project_crs: "EPSG:3857"
 buffer:
   distance_unit: "meters"
   input_crs: "EPSG:4326"
   output_crs: "EPSG:3857"
   metric_crs: "EPSG:3857"
 
-  BUFFER_DIR: data/uploads/buffers
 
-UNION_DIR: data/uploads/unions

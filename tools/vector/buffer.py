@@ -1,10 +1,11 @@
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 import geopandas as gpd
 from shapely import make_valid
 from shapely.geometry import shape, mapping
+from tools.vector.base import BaseVectorTool
 from utils.file_handler import ensure_folder_exists
 from utils.crs_validator import CRSValidator
 from utils.file_handler import get_unique_filename
@@ -47,7 +48,7 @@ def buffer_core(
     distance: float,
     unit: str = "meters",
     target_crs: str = "EPSG:3857",
-    save_path: Path = None,
+    save_path: Path = None,  # 注意：这里保留参数但实际由 Tool 类传入
 ) -> tuple[str, str]:
     """
     处理缓冲区操作的核心逻辑。
@@ -95,18 +96,6 @@ def buffer_core(
         logger.info(f"缓冲区处理完成，缓冲距离: {distance} {DEFAULT_DISTANCE_UNIT} 。")
 
         # Step 4. 保存结果
-        if save_path is None:
-            save_dir = ConfigManager.get("buffer.BUFFER_DIR", "data/uploads/buffer")
-            ensure_folder_exists(save_dir)
-            save_path = get_unique_filename(
-                directory=Path(save_dir),
-                original_filename=f"{input_path.stem}_buffer.shp",
-            )
-        else:
-            ensure_folder_exists(save_path.parent)
-            save_path = get_unique_filename(
-                directory=save_path.parent, original_filename=save_path.name
-            )
         out_gdf.to_file(save_path)
         logger.info(f"缓冲区结果已保存到: {save_path}")
 
@@ -117,3 +106,35 @@ def buffer_core(
     except Exception as e:
         logger.error(f"缓冲区处理失败: {e}")
         raise
+
+# ===== 新增：BufferTool 类 =====
+class BufferTool(BaseVectorTool):
+    """Buffer工具类，封装路径管理和业务逻辑调用"""
+    
+    def _execute_core(
+        self, 
+        input_paths: List[Path], 
+        save_path: Path, 
+        **kwargs
+    ) -> Tuple[str, str]:
+        """
+        调用 buffer_core 函数
+        
+        Args:
+            input_paths: 输入路径列表（buffer只需要第一个）
+            save_path: 已准备好的保存路径
+            **kwargs: distance, unit, target_crs 等参数
+        """
+        # 从 kwargs 提取参数
+        distance = kwargs.get('distance', 10)
+        unit = kwargs.get('unit', 'meters')
+        target_crs = kwargs.get('target_crs', 'EPSG:3857')
+        
+        # 调用核心函数，传入准备好的 save_path
+        return buffer_core(
+            input_path=input_paths[0],
+            distance=distance,
+            unit=unit,
+            target_crs=target_crs,
+            save_path=save_path  # 这里传入准备好的路径
+        )

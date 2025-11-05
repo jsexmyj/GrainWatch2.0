@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 from config.config import ConfigManager
 ConfigManager.load_config()
-from routes.upload_router import router as upload_router
+from api.routes.upload_router import router as upload_router
 
 
 app = FastAPI(title="GrainWatch API", version="1.0")
